@@ -3,456 +3,1252 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Push 4 Game</title>
+    <title>HKIIT-CW Style Shooter</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+        }
+        .dark canvas {
+            filter: brightness(0.9);
+        }
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .flashing {
+            animation: flash 0.3s linear infinite;
+        }
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 3px;
+            outline: none;
+        }
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #5D5CDE;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .volume-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #5D5CDE;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .dark .volume-slider {
+            background: #374151;
+        }
+        .audio-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+        .dark .audio-controls {
+            background-color: rgba(0, 0, 0, 0.3);
+        }
+    </style>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
                         primary: '#5D5CDE',
-                        player1: '#FF5757',
-                        player2: '#FFDD57',
-                        computer: '#57C7FF',
                     }
                 }
-            },
-            darkMode: 'class',
+            }
         }
     </script>
-    <style>
-        .board-cell {
-            transition: all 0.3s ease;
-        }
-        .piece {
-            transition: transform 0.6s cubic-bezier(0.5, 0, 0.75, 0.9);
-        }
-        
-        @keyframes bounce {
-            0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
-            40% {transform: translateY(10%);}
-            60% {transform: translateY(5%);}
-        }
-        .winner-piece {
-            animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-        .dark .board {
-            background-color: #2D2D2D;
-        }
-        .dark .board-cell {
-            background-color: #181818;
-        }
-    </style>
 </head>
-<body class="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
-    <div class="container mx-auto px-4 py-8 max-w-lg">
-        <h1 class="text-3xl font-bold text-center mb-6 text-primary">Push 4</h1>
-
-        <!-- Game Mode Selection -->
-        <div id="game-mode-selector" class="mb-6">
-            <h2 class="text-xl font-semibold mb-3 text-center">Select Game Mode</h2>
-            <div class="flex gap-4 justify-center">
-                <button id="single-player-btn" class="px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-opacity-90 transition-colors">
-                    Single Player
-                </button>
-                <button id="two-player-btn" class="px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-opacity-90 transition-colors">
-                    Two Players
-                </button>
+<body class="bg-gray-100 dark:bg-gray-900 transition-colors duration-300">
+    <div class="container mx-auto px-4 py-5 max-w-2xl">
+        <div class="text-center mb-4">
+            <h1 class="text-3xl font-bold text-primary mb-2 dark:text-primary">HKIIT Shooting Game(CW)</h1>
+            <div class="flex justify-center gap-4 mb-2">
+                <p class="text-gray-700 dark:text-gray-300">Score: <span id="score">0</span></p>
+                <p class="text-gray-700 dark:text-gray-300">Lives: <span id="lives">3</span></p>
+                <p class="text-gray-700 dark:text-gray-300">
+                    <span id="powerupStatus" class="hidden">Powerup: <span id="powerupName">CS</span> (<span id="powerupTimer">10</span>s)</span>
+                </p>
             </div>
         </div>
-
-        <!-- Game Status -->
-        <div id="game-status" class="mb-4 text-center font-medium text-lg hidden">
-            <span id="status-message">Player 1's Turn</span>
+        
+        <div class="relative bg-blue-50 dark:bg-gray-800 border-2 border-primary rounded-lg overflow-hidden mx-auto" style="max-width: 500px">
+            <canvas id="gameCanvas" class="w-full"></canvas>
+            <div class="audio-controls">
+                <button id="toggleMusic" class="text-white mr-2 focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path id="audioIcon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6a9 9 0 010 12M18.364 5.636a9 9 0 010 12.728M21 12a12 12 0 01-12 12" />
+                    </svg>
+                </button>
+                <input type="range" min="0" max="100" value="50" class="volume-slider w-16" id="volumeSlider">
+            </div>
+            <div id="gameOver" class="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center flex-col hidden">
+                <h2 class="text-white text-3xl font-bold mb-4">Game Over</h2>
+                <p class="text-white text-xl mb-6">Final Score: <span id="finalScore">0</span></p>
+                <p class="text-white text-xl mb-6">
+                    Want get the skills just like game?</br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Join US ! HKIIT at CW</br>
+                </p>
+                <p style="font: size 1px; color:white;">
+                    &nbsp;&nbsp;&nbsp;IT114105  Higher Diploma in Software Engineering</br>
+                    &nbsp;&nbsp;&nbsp;IT114107  Higher Diploma in Game Software Development</br>
+                    &nbsp;&nbsp;&nbsp;IT114122  Higher Diploma in Cybersecurity</br>
+                    &nbsp;&nbsp;&nbsp;IT114124  Higher Diploma in AI and Smart Technology</br></br>
+                    &nbsp;&nbsp;&nbsp;FS113002N Diploma of Foundation Studies(Information Technology)</br>
+                    &nbsp;&nbsp;&nbsp;FS113002S Diploma of Foundation Studies(Digital Media Studies)</br></br></br>
+                </p>
+                
+                <button id="restartButton" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition">Play Again</button>
+            </div>
+            <div id="startScreen" class="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center flex-col">
+                <h2 class="text-white text-3xl font-bold mb-4">Hunting Ur Programme</h2>
+                <p class="text-white text-lg mb-3">Click anywhere to move your plane</p>
+                <p class="text-white text-lg mb-6">Destroy enemy planes to score points!</p>
+                <button id="startButton" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition">Start Game</button>
+            </div>
         </div>
-
-        <!-- Game Board -->
-        <div id="game-container" class="hidden">
-            <div id="board" class="board bg-blue-600 dark:bg-blue-800 p-2 rounded-lg shadow-lg mb-4">
-                <div id="game-grid" class="grid grid-cols-7 gap-2">
-                    <!-- Columns will be generated by JavaScript -->
-                </div>
-            </div>
-
-            <!-- Game Controls -->
-            <div class="flex justify-center">
-                <button id="restart-btn" class="px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-opacity-90 transition-colors">
-                    New Game
-                </button>
-                <button id="change-mode-btn" class="ml-3 px-4 py-2 rounded-lg bg-gray-500 text-white font-medium hover:bg-opacity-90 transition-colors">
-                    Change Mode
-                </button>
-            </div>
+        
+        <div class="mt-4 text-sm text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
+            <p>Click or tap anywhere to move your plane to that position</p>
+            <p>Shoot down enemy planes to increase your score</p>
+            <p>Collect power-ups (10% chance to drop when defeating enemies):</p>
+            <ul class="list-disc ml-5 mt-1">
+                <li>CS - Tracking bullets that follow enemies</li>
+                <li>GSD - Spread shots that fire in multiple directions</li>
+                <li>SE - Three parallel shots covering a wider area</li>
+                <li>AIST - Laser beam with high penetration</li>
+            </ul>
         </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Check for dark mode preference
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // Check for dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
                 document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+
+        // Game variables
+        let canvas, ctx;
+        let player, bullets, enemies, explosions, powerups;
+        let score, lives, gameRunning, lastTime, spawnTimer;
+        let musicInitialized = false;
+        let musicPlaying = false;
+        let bgMusic, soundEffects;
+        
+        // Audio setup
+        function initAudio() {
+            if (musicInitialized) return;
+            
+            // Setup background music
+            bgMusic = {
+                synth: new Tone.PolySynth(Tone.Synth).toDestination(),
+                isPlaying: false,
+                notes: [],
+                currentNote: 0,
+                tempo: 120,
+                
+                // Create a simple MIDI-like sequence programmatically
+                createSequence() {
+                    // Super simple 8-bit style melody
+                    const melody = [
+                        { note: 'G4', duration: '8n' },
+                        { note: 'G4', duration: '8n' },
+                        { note: 'F4', duration: '8n' },
+                        { note: 'E4', duration: '8n' },
+                        { note: 'D4', duration: '8n' },
+                        { note: 'C4', duration: '8n' },
+                    ];
+
+                    const bassLine = [
+                        { note: 'G2', duration: '4n' },
+                        { note: 'F2', duration: '4n' },
+                        { note: 'E2', duration: '4n' },
+                        { note: 'D2', duration: '4n' },
+                        { note: 'C2', duration: '4n' },
+                        { note: 'B2', duration: '4n' },
+                    ];
+
+                    const percussion = [
+                        // 用於增加戰爭氛圍的強烈鼓點
+                        { note: 'C2', duration: '8n' },
+                        { note: 'C2', duration: '8n', rest: true },
+                        { note: 'C2', duration: '8n' },
+                        { note: 'C2', duration: '8n', rest: true },
+                        { note: 'C2', duration: '8n' },
+                        { note: 'C2', duration: '8n', rest: true },
+                    ];
+
+                    this.notes = [...melody, ...bassLine, ...percussion];
+                    this.tempo = 140; // 戰爭緊湊激烈的節拍
+                },
+                
+                play() {
+                    if (this.isPlaying) return;
+                    this.isPlaying = true;
+                    
+                    if (this.notes.length === 0) {
+                        this.createSequence();
+                    }
+                    
+                    Tone.Transport.bpm.value = this.tempo;
+                    
+                    // Set up a looping pattern
+                    this.pattern = new Tone.Pattern((time, note) => {
+                        this.synth.triggerAttackRelease(note.note, note.duration, time);
+                    }, this.notes);
+                    
+                    this.pattern.interval = '8n';
+                    this.pattern.start(0);
+                    
+                    Tone.Transport.start();
+                },
+                
+                stop() {
+                    if (!this.isPlaying) return;
+                    this.isPlaying = false;
+                    
+                    if (this.pattern) {
+                        this.pattern.stop();
+                    }
+                    Tone.Transport.stop();
+                },
+                
+                setVolume(vol) {
+                    // Convert 0-100 scale to decibels (-60 to 0)
+                    const db = vol === 0 ? -Infinity : -60 + (vol * 0.6);
+                    this.synth.volume.value = db;
+                }
+            };
+            
+            // Sound effects
+            soundEffects = {
+                shoot: new Tone.Synth({
+                    oscillator: { type: 'triangle' },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 }
+                }).toDestination(),
+                
+                explosion: new Tone.NoiseSynth({
+                    noise: { type: 'white' },
+                    envelope: { attack: 0.001, decay: 0.2, sustain: 0.1, release: 0.1 }
+                }).toDestination(),
+                
+                powerup: new Tone.Synth({
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.5 }
+                }).toDestination(),
+                
+                playShoot() {
+                    this.shoot.triggerAttackRelease('G5', '32n');
+                },
+                
+                playExplosion() {
+                    this.explosion.triggerAttackRelease('16n');
+                },
+                
+                playPowerup(type) {
+                    const notes = {
+                        'CS': 'C6',
+                        'GSD': 'E6',
+                        'SE': 'G6',
+                        'AIST': 'B6'
+                    };
+                    const note = notes[type] || 'C6';
+                    this.powerup.triggerAttackRelease(note, '8n');
+                },
+                
+                setVolume(vol) {
+                    // Convert 0-100 scale to decibels (-60 to 0)
+                    const db = vol === 0 ? -Infinity : -60 + (vol * 0.6);
+                    this.shoot.volume.value = db;
+                    this.explosion.volume.value = db;
+                    this.powerup.volume.value = db;
+                }
+            };
+            
+            // UI controls
+            const toggleMusicBtn = document.getElementById('toggleMusic');
+            const volumeSlider = document.getElementById('volumeSlider');
+            const audioIcon = document.getElementById('audioIcon');
+            
+            toggleMusicBtn.addEventListener('click', () => {
+                if (bgMusic.isPlaying) {
+                    bgMusic.stop();
+                    audioIcon.setAttribute('d', 'M5.586 15H4a1 1 0 01-1-1V9a1 1 0 011-1h1.586l4.707-4.707A1 1 0 0112 4v16a1 1 0 01-1.707.707L5.586 16z M17 14l3-3 M20 11l-3-3');
+                } else {
+                    Tone.start().then(() => {
+                        bgMusic.play();
+                        audioIcon.setAttribute('d', 'M15.536 8.464a5 5 0 010 7.072M12 6a9 9 0 010 12M18.364 5.636a9 9 0 010 12.728M21 12a12 12 0 01-12 12');
+                    });
+                }
+            });
+            
+            volumeSlider.addEventListener('input', (e) => {
+                const volume = parseInt(e.target.value);
+                bgMusic.setVolume(volume);
+                soundEffects.setVolume(volume);
+            });
+            
+            // Set initial volume
+            bgMusic.setVolume(50);
+            soundEffects.setVolume(50);
+            
+            musicInitialized = true;
+        }
+        
+        // Power-up types
+        const POWERUP_TYPES = {
+            CS: {
+                name: "CS",
+                color: '#9333EA', // Purple
+                description: "Tracking bullets",
+                textColor: "#FFFFFF"
+            },
+            GSD: {
+                name: "GSD",
+                color: '#F59E0B', // Amber
+                description: "Spread shots",
+                textColor: "#FFFFFF"
+            },
+            SE: {
+                name: "SE",
+                color: '#10B981', // Emerald
+                description: "Triple shots",
+                textColor: "#FFFFFF"
+            },
+            AIST: {
+                name: "AIST",
+                color: '#3B82F6', // Blue
+                description: "Laser beam",
+                textColor: "#FFFFFF"
+            }
+        };
+        
+        // Game objects
+        class Player {
+            constructor(canvas) {
+                this.width = 40;
+                this.height = 50;
+                this.x = canvas.width / 2 - this.width / 2;
+                this.y = canvas.height - this.height - 20;
+                this.targetX = this.x;
+                this.targetY = this.y;
+                this.speed = 5;
+                this.fireRate = 300; // ms
+                this.lastFire = 0;
+                this.invulnerable = false;
+                this.invulnerableTimer = 0;
+                this.powerupType = null;
+                this.powerupTimer = 0;
+                this.powerupDuration = 10000; // 10 seconds
             }
             
-            // Listen for changes in color scheme preference
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-                if (event.matches) {
-                    document.documentElement.classList.add('dark');
+            update(deltaTime) {
+                // Move towards target
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > this.speed) {
+                    this.x += (dx / distance) * this.speed;
+                    this.y += (dy / distance) * this.speed;
                 } else {
-                    document.documentElement.classList.remove('dark');
+                    this.x = this.targetX;
+                    this.y = this.targetY;
                 }
-            });
-
-            const gameModeSelector = document.getElementById('game-mode-selector');
-            const gameContainer = document.getElementById('game-container');
-            const gameStatus = document.getElementById('game-status');
-            const statusMessage = document.getElementById('status-message');
-            const gameGrid = document.getElementById('game-grid');
-            const singlePlayerBtn = document.getElementById('single-player-btn');
-            const twoPlayerBtn = document.getElementById('two-player-btn');
-            const restartBtn = document.getElementById('restart-btn');
-            const changeModeBtn = document.getElementById('change-mode-btn');
-
-            // Game constants
-            const ROWS = 6;
-            const COLS = 7;
-            const EMPTY = 0;
-            const PLAYER1 = 1;
-            const PLAYER2 = 2;
-            const COMPUTER = 3;
-
-            // Game state
-            let gameMode = null; // 'single' or 'two'
-            let currentPlayer = PLAYER1;
-            let gameBoard = [];
-            let gameOver = false;
-            let winningCells = [];
-
-            // Initialize board
-            function initializeBoard() {
-                gameBoard = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
-                gameGrid.innerHTML = '';
                 
-                // Create column buttons (upside down)
-                for (let col = 0; col < COLS; col++) {
-                    const column = document.createElement('div');
-                    column.className = 'flex flex-col'; // Changed from flex-col-reverse to flex-col
-                    column.dataset.col = col;
-                    
-                    for (let row = 0; row < ROWS; row++) {
-                        const cell = document.createElement('div');
-                        cell.className = 'board-cell w-full aspect-square rounded-full bg-white dark:bg-gray-800 shadow-inner flex items-center justify-center';
-                        cell.dataset.row = row;
-                        cell.dataset.col = col;
-                        column.appendChild(cell);
+                // Keep player in bounds
+                if (this.x < 20) this.x = 20;
+                if (this.x + this.width > canvas.width - 20) this.x = canvas.width - 20 - this.width;
+                
+                // Restrict Y movement to bottom half of screen
+                const minY = canvas.height / 2;
+                const maxY = canvas.height - 20 - this.height;
+                if (this.y < minY) this.y = minY;
+                if (this.y > maxY) this.y = maxY;
+                
+                // Auto fire
+                if (gameRunning && Date.now() - this.lastFire > this.fireRate) {
+                    this.shoot();
+                    this.lastFire = Date.now();
+                }
+                
+                // Update invulnerability
+                if (this.invulnerable) {
+                    this.invulnerableTimer -= deltaTime;
+                    if (this.invulnerableTimer <= 0) {
+                        this.invulnerable = false;
                     }
-                    
-                    gameGrid.appendChild(column);
                 }
-
-                gameGrid.addEventListener('click', handleColumnClick);
-                updateGameStatus();
-            }
-
-            // Handle column click
-            function handleColumnClick(e) {
-                if (gameOver) return;
                 
-                // If it's computer's turn in single player mode, ignore clicks
-                if (gameMode === 'single' && currentPlayer === COMPUTER) return;
-                
-                const column = e.target.closest('div[data-col]');
-                if (!column) return;
-                
-                const col = parseInt(column.dataset.col);
-                makeMove(col);
-            }
-
-            // Make a move in the specified column
-            function makeMove(col) {
-                // Find the highest empty row in the column
-                let row = getLowestEmptyRow(col);
-                
-                // If column is full, do nothing
-                if (row === -1) return;
-                
-                // Place the piece and update the board
-                gameBoard[row][col] = currentPlayer;
-                animatePiece(row, col, currentPlayer);
-                
-                // Check for win
-                if (checkWin(row, col, currentPlayer)) {
-                    highlightWinningCells();
-                    gameOver = true;
-                    
-                    let winMessage = '';
-                    if (currentPlayer === PLAYER1) {
-                        winMessage = 'Player 1 Wins!';
-                    } else if (currentPlayer === PLAYER2) {
-                        winMessage = 'Player 2 Wins!';
+                // Update powerup
+                if (this.powerupType) {
+                    this.powerupTimer -= deltaTime;
+                    if (this.powerupTimer <= 0) {
+                        this.powerupType = null;
+                        document.getElementById('powerupStatus').classList.add('hidden');
                     } else {
-                        winMessage = 'Computer Wins!';
+                        document.getElementById('powerupTimer').textContent = Math.ceil(this.powerupTimer / 1000);
                     }
+                }
+            }
+            
+            shoot() {
+                const bulletX = this.x + this.width / 2;
+                const bulletY = this.y;
+                
+                // Play shoot sound effect
+                if (musicInitialized && soundEffects) {
+                    soundEffects.playShoot();
+                }
+                
+                switch (this.powerupType) {
+                    case 'CS': // Tracking bullets
+                        bullets.push(new TrackingBullet(bulletX, bulletY));
+                        break;
+                    case 'GSD': // Spread shots
+                        // Center shot
+                        bullets.push(new Bullet(bulletX, bulletY));
+                        // Spread left and right at angles
+                        bullets.push(new SpreadBullet(bulletX, bulletY, -0.2)); // Left
+                        bullets.push(new SpreadBullet(bulletX, bulletY, 0.2));  // Right
+                        break;
+                    case 'SE': // Triple parallel shots
+                        bullets.push(new Bullet(bulletX, bulletY));
+                        bullets.push(new Bullet(bulletX - 15, bulletY)); // Left
+                        bullets.push(new Bullet(bulletX + 15, bulletY)); // Right
+                        break;
+                    case 'AIST': // Laser beam
+                        bullets.push(new LaserBullet(bulletX, bulletY));
+                        break;
+                    default: // Normal bullet
+                        bullets.push(new Bullet(bulletX, bulletY));
+                }
+            }
+            
+            draw() {
+                if (this.invulnerable && Math.floor(Date.now() / 100) % 2 === 0) {
+                    ctx.globalAlpha = 0.5;
+                }
+                
+                // Base colors
+                let bodyColor = '#3B82F6';
+                let wingsColor = '#2563EB';
+                let cockpitColor = '#DBEAFE';
+                
+                // Change colors based on powerup
+                if (this.powerupType) {
+                    const powerupInfo = POWERUP_TYPES[this.powerupType];
+                    if (powerupInfo) {
+                        bodyColor = powerupInfo.color;
+                        wingsColor = this.adjustColor(powerupInfo.color, -20); // Darker
+                        cockpitColor = this.adjustColor(powerupInfo.color, 40); // Lighter
+                    }
+                }
+                
+                // Draw plane body
+                ctx.fillStyle = bodyColor;
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width / 2, this.y);
+                ctx.lineTo(this.x + this.width * 3/4, this.y + this.height / 4);
+                ctx.lineTo(this.x + this.width * 3/4, this.y + this.height * 3/4);
+                ctx.lineTo(this.x + this.width / 2, this.y + this.height);
+                ctx.lineTo(this.x + this.width / 4, this.y + this.height * 3/4);
+                ctx.lineTo(this.x + this.width / 4, this.y + this.height / 4);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw wings
+                ctx.fillStyle = wingsColor;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + this.height * 0.6);
+                ctx.lineTo(this.x + this.width, this.y + this.height * 0.6);
+                ctx.lineTo(this.x + this.width * 0.7, this.y + this.height * 0.8);
+                ctx.lineTo(this.x + this.width * 0.3, this.y + this.height * 0.8);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw cockpit
+                ctx.fillStyle = cockpitColor;
+                ctx.beginPath();
+                ctx.arc(this.x + this.width / 2, this.y + this.height / 3, 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.globalAlpha = 1;
+            }
+            
+            setInvulnerable(duration) {
+                this.invulnerable = true;
+                this.invulnerableTimer = duration;
+            }
+            
+            activatePowerup(type) {
+                this.powerupType = type;
+                this.powerupTimer = this.powerupDuration;
+                document.getElementById('powerupStatus').classList.remove('hidden');
+                document.getElementById('powerupName').textContent = type;
+                document.getElementById('powerupTimer').textContent = Math.ceil(this.powerupTimer / 1000);
+            }
+            
+            // Helper to adjust color brightness
+            adjustColor(hex, percent) {
+                // Parse the hex color
+                let r = parseInt(hex.substring(1, 3), 16);
+                let g = parseInt(hex.substring(3, 5), 16);
+                let b = parseInt(hex.substring(5, 7), 16);
+                
+                // Adjust brightness
+                r = Math.max(0, Math.min(255, r + percent));
+                g = Math.max(0, Math.min(255, g + percent));
+                b = Math.max(0, Math.min(255, b + percent));
+                
+                // Convert back to hex
+                return '#' + 
+                    ((1 << 24) + (r << 16) + (g << 8) + b)
+                    .toString(16).slice(1);
+            }
+        }
+        
+        class Bullet {
+            constructor(x, y) {
+                this.x = x - 2; // Center bullet
+                this.y = y;
+                this.width = 4;
+                this.height = 15;
+                this.speed = 10;
+                this.damage = 1;
+                this.penetrating = false;
+            }
+            
+            update() {
+                this.y -= this.speed; // Move up
+            }
+            
+            draw() {
+                ctx.fillStyle = '#EF4444';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+            
+            isOffscreen() {
+                return this.y < 0;
+            }
+        }
+        
+        class TrackingBullet extends Bullet {
+            constructor(x, y) {
+                super(x, y);
+                this.width = 6;
+                this.height = 15;
+                this.speed = 8;
+                this.target = this.findTarget();
+                this.trackingSpeed = 0.1;
+                this.damage = 1;
+            }
+            
+            findTarget() {
+                // Find closest enemy
+                let closest = null;
+                let minDist = Number.MAX_VALUE;
+                
+                for (const enemy of enemies) {
+                    const dx = enemy.x - this.x;
+                    const dy = enemy.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
                     
-                    statusMessage.textContent = winMessage;
-                    return;
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closest = enemy;
+                    }
                 }
                 
-                // Check for draw
-                if (isBoardFull()) {
-                    gameOver = true;
-                    statusMessage.textContent = 'Game Draw!';
-                    return;
+                return closest;
+            }
+            
+            update() {
+                // Move upward
+                this.y -= this.speed;
+                
+                // Update target if needed
+                if (!this.target || this.target.isOffscreen()) {
+                    this.target = this.findTarget();
                 }
                 
-                // Switch players
-                if (gameMode === 'single') {
-                    if (currentPlayer === PLAYER1) {
-                        currentPlayer = COMPUTER;
-                        updateGameStatus();
-                        setTimeout(makeComputerMove, 750); // Delay computer move for better UX
+                // Track target if we have one
+                if (this.target) {
+                    const targetX = this.target.x + this.target.width / 2;
+                    const dx = targetX - this.x;
+                    this.x += dx * this.trackingSpeed;
+                }
+            }
+            
+            draw() {
+                ctx.fillStyle = POWERUP_TYPES.CS.color; // Purple tracking bullet
+                ctx.fillRect(this.x - this.width/2, this.y, this.width, this.height);
+                
+                // Bullet trail
+                ctx.strokeStyle = `rgba(${parseInt(POWERUP_TYPES.CS.color.substr(1, 2), 16)}, ${parseInt(POWERUP_TYPES.CS.color.substr(3, 2), 16)}, ${parseInt(POWERUP_TYPES.CS.color.substr(5, 2), 16)}, 0.4)`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x, this.y + 10);
+                ctx.stroke();
+            }
+        }
+        
+        class SpreadBullet extends Bullet {
+            constructor(x, y, angle) {
+                super(x, y);
+                this.angle = angle; // Radians
+                this.speed = 9;
+                this.damage = 1;
+            }
+            
+            update() {
+                this.y -= Math.cos(this.angle) * this.speed;
+                this.x += Math.sin(this.angle) * this.speed;
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(-this.angle); // Negative angle because we're moving upward
+                ctx.fillStyle = POWERUP_TYPES.GSD.color; // Amber spread bullet
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Small flame trail
+                ctx.fillStyle = '#FBBF24';
+                ctx.beginPath();
+                ctx.moveTo(0, this.height/2);
+                ctx.lineTo(-3, this.height/2 + 5);
+                ctx.lineTo(3, this.height/2 + 5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+            
+            isOffscreen() {
+                return this.y < 0 || this.x < 0 || this.x > canvas.width;
+            }
+        }
+        
+        class LaserBullet extends Bullet {
+            constructor(x, y) {
+                super(x, y);
+                this.width = 8;
+                this.height = 80;
+                this.speed = 12;
+                this.damage = 2;
+                this.penetrating = true; // Goes through enemies
+            }
+            
+            draw() {
+                // Main beam
+                ctx.fillStyle = POWERUP_TYPES.AIST.color; // Blue laser
+                ctx.fillRect(this.x - this.width/2, this.y - this.height, this.width, this.height);
+                
+                // Glow effect
+                ctx.save();
+                ctx.shadowColor = POWERUP_TYPES.AIST.color;
+                ctx.shadowBlur = 15;
+                ctx.fillRect(this.x - this.width/4, this.y - this.height, this.width/2, this.height);
+                ctx.restore();
+                
+                // Energy core at front
+                ctx.fillStyle = '#DBEAFE';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - this.height + 5, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        class Enemy {
+            constructor(canvas) {
+                this.width = 40;
+                this.height = 50;
+                this.x = Math.random() * (canvas.width - this.width - 40) + 20;
+                this.y = -this.height;
+                this.speed = 2 + Math.random() * 2;
+                this.health = 1;
+                this.movementPattern = Math.floor(Math.random() * 3); // 0: straight, 1: zigzag, 2: wave
+                this.movementTimer = 0;
+                this.amplitude = 20 + Math.random() * 30; // For zigzag and wave patterns
+                this.frequency = 0.02 + Math.random() * 0.03; // For wave pattern
+                this.originalX = this.x; // For wave pattern
+            }
+            
+            update() {
+                // Move down
+                this.y += this.speed;
+                
+                // Apply movement pattern
+                this.movementTimer += 1;
+                
+                if (this.movementPattern === 1) { // Zigzag
+                    if (this.movementTimer % 60 < 30) {
+                        this.x += Math.sin(this.frequency * this.movementTimer) * 0.5;
                     } else {
-                        currentPlayer = PLAYER1;
+                        this.x -= Math.sin(this.frequency * this.movementTimer) * 0.5;
                     }
-                } else { // Two-player mode
-                    currentPlayer = currentPlayer === PLAYER1 ? PLAYER2 : PLAYER1;
+                } else if (this.movementPattern === 2) { // Wave
+                    this.x = this.originalX + Math.sin(this.frequency * this.movementTimer) * this.amplitude;
                 }
                 
-                updateGameStatus();
+                // Keep in bounds
+                if (this.x < 0) this.x = 0;
+                if (this.x > canvas.width - this.width) this.x = canvas.width - this.width;
             }
-
-            // Animate the piece rising from below
-            function animatePiece(row, col, player) {
-                const column = gameGrid.children[col];
-                const cell = column.children[row]; // No need to invert row anymore with upside-down board
+            
+            draw() {
+                // Draw enemy plane
+                ctx.fillStyle = '#DC2626';
                 
-                const piece = document.createElement('div');
-                piece.className = 'piece absolute w-[80%] h-[80%] rounded-full';
+                // Body - pointed downward
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width / 2, this.y + this.height);
+                ctx.lineTo(this.x + this.width * 3/4, this.y + this.height * 3/4);
+                ctx.lineTo(this.x + this.width * 3/4, this.y + this.height / 4);
+                ctx.lineTo(this.x + this.width / 2, this.y);
+                ctx.lineTo(this.x + this.width / 4, this.y + this.height / 4);
+                ctx.lineTo(this.x + this.width / 4, this.y + this.height * 3/4);
+                ctx.closePath();
+                ctx.fill();
                 
-                if (player === PLAYER1) {
-                    piece.classList.add('bg-player1');
-                } else if (player === PLAYER2) {
-                    piece.classList.add('bg-player2');
-                } else { // Computer
-                    piece.classList.add('bg-computer');
-                }
+                // Wings
+                ctx.fillStyle = '#B91C1C';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + this.height * 0.4);
+                ctx.lineTo(this.x + this.width, this.y + this.height * 0.4);
+                ctx.lineTo(this.x + this.width * 0.7, this.y + this.height * 0.2);
+                ctx.lineTo(this.x + this.width * 0.3, this.y + this.height * 0.2);
+                ctx.closePath();
+                ctx.fill();
                 
-                // Start from below the board
-                const cellHeight = cell.offsetHeight;
-                const startY = (ROWS * -cellHeight);
-                piece.style.transform = `translateY(${startY}px)`;
-                
-                cell.style.position = 'relative';
-                cell.appendChild(piece);
-                
-                // Animate the piece rising
-                setTimeout(() => {
-                    piece.style.transform = 'translateY(0)';
-                    
-                    // Add bounce animation after the piece arrives
-                    piece.addEventListener('transitionend', function onTransitionEnd() {
-                        piece.style.animation = 'bounce 0.5s ease';
-                        piece.removeEventListener('transitionend', onTransitionEnd);
-                    });
-                }, 50);
+                // Cockpit
+                ctx.fillStyle = '#FEE2E2';
+                ctx.beginPath();
+                ctx.arc(this.x + this.width / 2, this.y + this.height * 2/3, 5, 0, Math.PI * 2);
+                ctx.fill();
             }
-
-            // Computer move algorithm
-            function makeComputerMove() {
-                if (gameOver) return;
+            
+            isOffscreen() {
+                return this.y > canvas.height;
+            }
+            
+            takeDamage(amount) {
+                this.health -= amount;
+                return this.health <= 0;
+            }
+        }
+        
+        class PowerUp {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 30;
+                this.height = 30;
+                this.speed = 2;
+                this.oscillation = 0;
                 
-                // First check if computer can win in the next move
-                for (let col = 0; col < COLS; col++) {
-                    let row = getLowestEmptyRow(col);
-                    if (row !== -1) {
-                        gameBoard[row][col] = COMPUTER;
-                        if (checkWin(row, col, COMPUTER)) {
-                            gameBoard[row][col] = EMPTY; // Reset for actual move
-                            makeMove(col);
-                            return;
-                        }
-                        gameBoard[row][col] = EMPTY; // Reset after checking
-                    }
-                }
+                // Randomly select one of the powerup types
+                const types = Object.keys(POWERUP_TYPES);
+                this.type = types[Math.floor(Math.random() * types.length)];
+                this.info = POWERUP_TYPES[this.type];
+            }
+            
+            update() {
+                this.y += this.speed; // Move down
                 
-                // Then check if player can win in the next move and block
-                for (let col = 0; col < COLS; col++) {
-                    let row = getLowestEmptyRow(col);
-                    if (row !== -1) {
-                        gameBoard[row][col] = PLAYER1;
-                        if (checkWin(row, col, PLAYER1)) {
-                            gameBoard[row][col] = EMPTY; // Reset for actual move
-                            makeMove(col);
-                            return;
-                        }
-                        gameBoard[row][col] = EMPTY; // Reset after checking
-                    }
-                }
+                // Add slight left and right movement
+                this.oscillation += 0.05;
+                this.x += Math.sin(this.oscillation) * 0.5;
+            }
+            
+            draw() {
+                // Draw power-up box
+                ctx.fillStyle = this.info.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
                 
-                // Otherwise, prefer the center column
-                let centerCol = 3;
-                if (getLowestEmptyRow(centerCol) !== -1) {
-                    makeMove(centerCol);
-                    return;
-                }
+                // Draw border
+                ctx.strokeStyle = this.adjustColor(this.info.color, 40);
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
                 
-                // If center is full, choose a random valid column
-                let validCols = [];
-                for (let col = 0; col < COLS; col++) {
-                    if (getLowestEmptyRow(col) !== -1) {
-                        validCols.push(col);
-                    }
-                }
+                // Draw text
+                ctx.fillStyle = this.info.textColor || '#FFFFFF';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type, this.x + this.width / 2, this.y + this.height / 2);
                 
-                if (validCols.length > 0) {
-                    const randomCol = validCols[Math.floor(Math.random() * validCols.length)];
-                    makeMove(randomCol);
+                // Add glow effect
+                ctx.shadowColor = this.info.color;
+                ctx.shadowBlur = 10;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+                ctx.shadowBlur = 0;
+            }
+            
+            isOffscreen() {
+                return this.y > canvas.height;
+            }
+            
+            // Helper to adjust color brightness
+            adjustColor(hex, percent) {
+                // Parse the hex color
+                let r = parseInt(hex.substring(1, 3), 16);
+                let g = parseInt(hex.substring(3, 5), 16);
+                let b = parseInt(hex.substring(5, 7), 16);
+                
+                // Adjust brightness
+                r = Math.max(0, Math.min(255, r + percent));
+                g = Math.max(0, Math.min(255, g + percent));
+                b = Math.max(0, Math.min(255, b + percent));
+                
+                // Convert back to hex
+                return '#' + 
+                    ((1 << 24) + (r << 16) + (g << 8) + b)
+                    .toString(16).slice(1);
+            }
+        }
+        
+        class Explosion {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 5;
+                this.maxRadius = 25;
+                this.growth = 2;
+                this.opacity = 1;
+                
+                // Play explosion sound
+                if (musicInitialized && soundEffects) {
+                    soundEffects.playExplosion();
                 }
             }
-
-            // Get the highest empty row in a column (since we're inverted)
-            function getLowestEmptyRow(col) {
-                // Start from the top (ROWS-1) and go down
-                for (let row = ROWS - 1; row >= 0; row--) {
-                    if (gameBoard[row][col] === EMPTY) {
-                        return row;
-                    }
+            
+            update() {
+                this.radius += this.growth;
+                if (this.radius > this.maxRadius / 2) {
+                    this.opacity -= 0.05;
                 }
-                return -1; // Column is full
+                return this.opacity > 0;
             }
-
-            // Check if the board is full (draw)
-            function isBoardFull() {
-                for (let col = 0; col < COLS; col++) {
-                    if (getLowestEmptyRow(col) !== -1) {
-                        return false;
-                    }
-                }
-                return true;
+            
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.opacity;
+                ctx.fillStyle = '#FCD34D';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#F59E0B';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#EF4444';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
             }
-
-            // Check for a win
-            function checkWin(row, col, player) {
-                // Check horizontal
-                winningCells = [];
-                for (let c = Math.max(0, col - 3); c <= Math.min(col, COLS - 4); c++) {
-                    if (gameBoard[row][c] === player && 
-                        gameBoard[row][c+1] === player && 
-                        gameBoard[row][c+2] === player && 
-                        gameBoard[row][c+3] === player) {
-                        winningCells = [[row, c], [row, c+1], [row, c+2], [row, c+3]];
-                        return true;
-                    }
-                }
-                
-                // Check vertical
-                winningCells = [];
-                for (let r = Math.max(0, row - 3); r <= Math.min(row, ROWS - 4); r++) {
-                    if (gameBoard[r][col] === player && 
-                        gameBoard[r+1][col] === player && 
-                        gameBoard[r+2][col] === player && 
-                        gameBoard[r+3][col] === player) {
-                        winningCells = [[r, col], [r+1, col], [r+2, col], [r+3, col]];
-                        return true;
-                    }
-                }
-                
-                // Check diagonal up-right
-                winningCells = [];
-                for (let r = 3; r < ROWS; r++) {
-                    for (let c = 0; c < COLS - 3; c++) {
-                        if (gameBoard[r][c] === player && 
-                            gameBoard[r-1][c+1] === player && 
-                            gameBoard[r-2][c+2] === player && 
-                            gameBoard[r-3][c+3] === player) {
-                            winningCells = [[r, c], [r-1, c+1], [r-2, c+2], [r-3, c+3]];
-                            return true;
-                        }
-                    }
-                }
-                
-                // Check diagonal up-left
-                winningCells = [];
-                for (let r = 3; r < ROWS; r++) {
-                    for (let c = 3; c < COLS; c++) {
-                        if (gameBoard[r][c] === player && 
-                            gameBoard[r-1][c-1] === player && 
-                            gameBoard[r-2][c-2] === player && 
-                            gameBoard[r-3][c-3] === player) {
-                            winningCells = [[r, c], [r-1, c-1], [r-2, c-2], [r-3, c-3]];
-                            return true;
-                        }
-                    }
-                }
-                
-                return false;
-            }
-
-            // Highlight winning cells
-            function highlightWinningCells() {
-                winningCells.forEach(cell => {
-                    const [row, col] = cell;
-                    const column = gameGrid.children[col];
-                    const cellElement = column.children[row]; // Updated for upside-down board
-                    const piece = cellElement.querySelector('.piece');
-                    if (piece) {
-                        piece.classList.add('winner-piece');
-                    }
+        }
+        
+        // Star background
+        const stars = [];
+        function initStars() {
+            stars.length = 0;
+            const starCount = Math.floor(canvas.width * canvas.height / 1000);
+            
+            for (let i = 0; i < starCount; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: 0.5 + Math.random() * 1.5,
+                    speed: 0.2 + Math.random() * 0.8
                 });
             }
-
-            // Update game status display
-            function updateGameStatus() {
-                if (gameOver) return;
+        }
+        
+        function updateStars() {
+            stars.forEach(star => {
+                star.y += star.speed;
                 
-                if (gameMode === 'single') {
-                    statusMessage.textContent = currentPlayer === PLAYER1 ? 
-                        'Your Turn' : 'Computer Thinking...';
-                } else {
-                    statusMessage.textContent = currentPlayer === PLAYER1 ? 
-                        'Player 1\'s Turn' : 'Player 2\'s Turn';
+                // Wrap stars to top when they reach bottom
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * canvas.width;
+                }
+            });
+        }
+        
+        function renderStars() {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.5)';
+            
+            stars.forEach(star => {
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+        }
+        
+        // Initialize the game
+        function initGame() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // Set canvas size based on container
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Initialize audio system
+            initAudio();
+            
+            // Initialize game objects
+            player = new Player(canvas);
+            bullets = [];
+            enemies = [];
+            explosions = [];
+            powerups = [];
+            score = 0;
+            lives = 3;
+            gameRunning = false;
+            lastTime = 0;
+            spawnTimer = 0;
+            
+            // Initialize stars
+            initStars();
+            
+            // Add event listeners
+            canvas.addEventListener('click', handleClick);
+            canvas.addEventListener('touchstart', handleTouch);
+            document.getElementById('startButton').addEventListener('click', startGame);
+            document.getElementById('restartButton').addEventListener('click', startGame);
+            
+            // Initial render
+            updateUI();
+            gameLoop(0);
+        }
+        
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = window.innerHeight * 0.75;
+            
+            // Re-initialize stars after resize
+            if (stars.length > 0) {
+                initStars();
+            }
+        }
+        
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOver').classList.add('hidden');
+            document.getElementById('powerupStatus').classList.add('hidden');
+            
+            // Start background music if initialized
+            if (musicInitialized && !bgMusic.isPlaying) {
+                Tone.start().then(() => {
+                    bgMusic.play();
+                    const audioIcon = document.getElementById('audioIcon');
+                    audioIcon.setAttribute('d', 'M15.536 8.464a5 5 0 010 7.072M12 6a9 9 0 010 12M18.364 5.636a9 9 0 010 12.728M21 12a12 12 0 01-12 12');
+                });
+            }
+            
+            // Reset game state
+            player = new Player(canvas);
+            bullets = [];
+            enemies = [];
+            explosions = [];
+            powerups = [];
+            score = 0;
+            lives = 3;
+            gameRunning = true;
+            updateUI();
+        }
+        
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('lives').textContent = lives;
+            document.getElementById('finalScore').textContent = score;
+        }
+        
+        function handleClick(e) {
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            player.targetX = x - player.width / 2;
+            player.targetY = y - player.height / 2;
+        }
+        
+        function handleTouch(e) {
+            e.preventDefault();
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.touches[0].clientX - rect.left;
+            const y = e.touches[0].clientY - rect.top;
+            
+            player.targetX = x - player.width / 2;
+            player.targetY = y - player.height / 2;
+        }
+        
+        function checkCollisions() {
+            // Check bullet-enemy collisions
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                let bulletRemoved = false;
+                
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const enemy = enemies[j];
+                    
+                    if (
+                        bullet.x < enemy.x + enemy.width &&
+                        bullet.x + bullet.width > enemy.x &&
+                        bullet.y < enemy.y + enemy.height &&
+                        bullet.y + bullet.height > enemy.y
+                    ) {
+                        // Check if enemy is destroyed
+                        if (enemy.takeDamage(bullet.damage)) {
+                            // Create explosion at enemy position
+                            explosions.push(new Explosion(
+                                enemy.x + enemy.width / 2,
+                                enemy.y + enemy.height / 2
+                            ));
+                            
+                            // 10% chance to drop a power-up
+                            if (Math.random() < 0.1) {
+                                powerups.push(new PowerUp(
+                                    enemy.x + enemy.width / 2 - 15,
+                                    enemy.y + enemy.height / 2 - 15
+                                ));
+                            }
+                            
+                            // Remove enemy
+                            enemies.splice(j, 1);
+                            
+                            // Increase score
+                            score += 10;
+                            updateUI();
+                        }
+                        
+                        // Remove bullet unless it's penetrating
+                        if (!bullet.penetrating) {
+                            bullets.splice(i, 1);
+                            bulletRemoved = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (bulletRemoved) continue;
+            }
+            
+            // Check player-powerup collisions
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                if (
+                    player.x < powerups[i].x + powerups[i].width &&
+                    player.x + player.width > powerups[i].x &&
+                    player.y < powerups[i].y + powerups[i].height &&
+                    player.y + player.height > powerups[i].y
+                ) {
+                    // Get powerup type before removing
+                    const powerupType = powerups[i].type;
+                    
+                    // Play powerup sound
+                    if (musicInitialized && soundEffects) {
+                        soundEffects.playPowerup(powerupType);
+                    }
+                    
+                    // Collect power-up
+                    powerups.splice(i, 1);
+                    player.activatePowerup(powerupType);
+                    
+                    // Add visual effect based on powerup color
+                    const flashColor = POWERUP_TYPES[powerupType].color;
+                    const flash = document.createElement('div');
+                    flash.classList.add('absolute', 'inset-0', 'z-10');
+                    flash.style.backgroundColor = flashColor;
+                    flash.style.opacity = '0.3';
+                    canvas.parentElement.appendChild(flash);
+                    setTimeout(() => flash.remove(), 300);
                 }
             }
-
-            // Start a new game
-            function startNewGame() {
-                gameOver = false;
-                currentPlayer = PLAYER1;
-                winningCells = [];
-                initializeBoard();
+            
+            // Check player-enemy collisions
+            if (!player.invulnerable) {
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    if (
+                        player.x < enemies[i].x + enemies[i].width &&
+                        player.x + player.width > enemies[i].x &&
+                        player.y < enemies[i].y + enemies[i].height &&
+                        player.y + player.height > enemies[i].y
+                    ) {
+                        // Create explosion at collision point
+                        explosions.push(new Explosion(
+                            player.x + player.width / 2,
+                            player.y
+                        ));
+                        
+                        // Remove enemy
+                        enemies.splice(i, 1);
+                        
+                        // Reduce lives
+                        lives--;
+                        updateUI();
+                        
+                        if (lives <= 0) {
+                            gameOver();
+                        } else {
+                            player.setInvulnerable(2000); // 2 seconds invulnerability
+                        }
+                        
+                        break;
+                    }
+                }
             }
-
-            // Start single player game
-            singlePlayerBtn.addEventListener('click', () => {
-                gameMode = 'single';
-                gameModeSelector.classList.add('hidden');
-                gameContainer.classList.remove('hidden');
-                gameStatus.classList.remove('hidden');
-                startNewGame();
-            });
-
-            // Start two player game
-            twoPlayerBtn.addEventListener('click', () => {
-                gameMode = 'two';
-                gameModeSelector.classList.add('hidden');
-                gameContainer.classList.remove('hidden');
-                gameStatus.classList.remove('hidden');
-                startNewGame();
-            });
-
-            // Restart game
-            restartBtn.addEventListener('click', startNewGame);
-
-            // Change game mode
-            changeModeBtn.addEventListener('click', () => {
-                gameContainer.classList.add('hidden');
-                gameStatus.classList.add('hidden');
-                gameModeSelector.classList.remove('hidden');
-            });
-        });
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('gameOver').classList.remove('hidden');
+        }
+        
+        function spawnEnemies(deltaTime) {
+            spawnTimer += deltaTime;
+            
+            // Spawn new enemy every 1-2 seconds
+            const spawnRate = 1000 - Math.min(score / 10, 500); // Spawn faster as score increases
+            
+            if (spawnTimer > spawnRate) {
+                enemies.push(new Enemy(canvas));
+                spawnTimer = 0;
+            }
+        }
+        
+        function update(deltaTime) {
+            if (gameRunning) {
+                player.update(deltaTime);
+                
+                // Update stars (moving background)
+                updateStars();
+                
+                // Update bullets
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    bullets[i].update();
+                    if (bullets[i].isOffscreen()) {
+                        bullets.splice(i, 1);
+                    }
+                }
+                
+                // Update enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    enemies[i].update();
+                    if (enemies[i].isOffscreen()) {
+                        enemies.splice(i, 1);
+                    }
+                }
+                
+                // Update powerups
+                for (let i = powerups.length - 1; i >= 0; i--) {
+                    powerups[i].update();
+                    if (powerups[i].isOffscreen()) {
+                        powerups.splice(i, 1);
+                    }
+                }
+                
+                // Update explosions
+                for (let i = explosions.length - 1; i >= 0; i--) {
+                    if (!explosions[i].update()) {
+                        explosions.splice(i, 1);
+                    }
+                }
+                
+                // Spawn enemies
+                spawnEnemies(deltaTime);
+                
+                // Check collisions
+                checkCollisions();
+            }
+        }
+        
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            ctx.fillStyle = isDarkMode ? '#0F172A' : '#DBEAFE';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw stars
+            renderStars();
+            
+            // Draw bullets
+            bullets.forEach(bullet => bullet.draw());
+            
+            // Draw powerups
+            powerups.forEach(powerup => powerup.draw());
+            
+            // Draw enemies
+            enemies.forEach(enemy => enemy.draw());
+            
+            // Draw player
+            player.draw();
+            
+            // Draw explosions
+            explosions.forEach(explosion => explosion.draw());
+        }
+        
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Update game state
+            update(deltaTime);
+            
+            // Render game
+            render();
+            
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game when the page loads
+        window.addEventListener('load', initGame);
     </script>
 </body>
 </html>
